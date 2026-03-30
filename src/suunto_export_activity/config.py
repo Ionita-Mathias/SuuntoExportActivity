@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .compliance import normalize_bool
 from .exceptions import ConfigError
+from .i18n import t
 from .utils import load_env_file
 
 
@@ -48,32 +49,32 @@ class Settings:
         subscription_key = os.getenv("SUUNTO_SUBSCRIPTION_KEY", "").strip()
 
         if require_api_credentials and not client_id:
-            raise ConfigError("SUUNTO_CLIENT_ID is required.")
+            raise ConfigError(t("config.client_id_required"))
         if require_api_credentials and not client_secret:
-            raise ConfigError("SUUNTO_CLIENT_SECRET is required.")
+            raise ConfigError(t("config.client_secret_required"))
         if require_api_credentials and not subscription_key:
-            raise ConfigError("SUUNTO_SUBSCRIPTION_KEY is required.")
+            raise ConfigError(t("config.subscription_key_required"))
 
         max_hr_raw = os.getenv("SUUNTO_MAX_HR")
         try:
             max_hr = int(max_hr_raw) if max_hr_raw and max_hr_raw.strip() else None
         except ValueError as exc:
-            raise ConfigError("SUUNTO_MAX_HR must be an integer.") from exc
+            raise ConfigError(t("config.max_hr_integer")) from exc
 
         token_path_str = os.getenv("SUUNTO_TOKEN_PATH", ".tokens/suunto_token.json").strip()
         token_path = Path(token_path_str)
 
         token_storage_mode = os.getenv("SUUNTO_TOKEN_STORAGE", "memory").strip().lower()
         if token_storage_mode not in {"memory", "file"}:
-            raise ConfigError("SUUNTO_TOKEN_STORAGE must be 'memory' or 'file'.")
+            raise ConfigError(t("config.token_storage_invalid"))
 
         rate_limit_raw = os.getenv("SUUNTO_RATE_LIMIT_PER_MINUTE", "10").strip()
         try:
             rate_limit_per_minute = int(rate_limit_raw)
         except ValueError as exc:
-            raise ConfigError("SUUNTO_RATE_LIMIT_PER_MINUTE must be an integer.") from exc
+            raise ConfigError(t("config.rate_limit_integer")) from exc
         if rate_limit_per_minute <= 0:
-            raise ConfigError("SUUNTO_RATE_LIMIT_PER_MINUTE must be > 0.")
+            raise ConfigError(t("config.rate_limit_positive"))
 
         return cls(
             client_id=client_id,

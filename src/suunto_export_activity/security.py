@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from .exceptions import SecurityError
+from .i18n import t
 
 _MAGIC = b"SENC1"
 
@@ -16,13 +17,10 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     except ImportError as exc:  # pragma: no cover - runtime dependency path
-        raise SecurityError(
-            "Encryption requested but 'cryptography' is not installed. "
-            "Install with: pip install 'suunto-export-activity[crypto]'"
-        ) from exc
+        raise SecurityError(t("security.crypto_missing")) from exc
 
     if not passphrase:
-        raise SecurityError("Encryption passphrase cannot be empty.")
+        raise SecurityError(t("security.passphrase_empty"))
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -37,10 +35,7 @@ def encrypt_file(path: Path, passphrase: str, *, delete_plaintext: bool = True) 
     try:
         from cryptography.fernet import Fernet
     except ImportError as exc:  # pragma: no cover - runtime dependency path
-        raise SecurityError(
-            "Encryption requested but 'cryptography' is not installed. "
-            "Install with: pip install 'suunto-export-activity[crypto]'"
-        ) from exc
+        raise SecurityError(t("security.crypto_missing")) from exc
 
     plaintext = path.read_bytes()
     salt = os.urandom(16)

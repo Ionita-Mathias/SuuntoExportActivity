@@ -12,6 +12,7 @@ import requests
 from .auth import OAuthClient
 from .config import Settings
 from .exceptions import ApiError
+from .i18n import t
 from .utils import ensure_directory
 
 
@@ -82,11 +83,21 @@ class SuuntoApiClient:
 
         if response.status_code == 429:
             raise ApiError(
-                f"Suunto API rate limit reached for {url}. "
-                f"Configured client-side throttle: {self.settings.rate_limit_per_minute}/minute."
+                t(
+                    "api.rate_limit_reached",
+                    url=url,
+                    rate=self.settings.rate_limit_per_minute,
+                )
             )
         if response.status_code >= 400:
-            raise ApiError(f"API request failed ({response.status_code}) for {url}: {response.text[:400]}")
+            raise ApiError(
+                t(
+                    "api.request_failed",
+                    status=response.status_code,
+                    url=url,
+                    details=response.text[:400],
+                )
+            )
         return response
 
     def list_workouts(

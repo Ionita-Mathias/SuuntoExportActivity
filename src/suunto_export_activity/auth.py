@@ -10,6 +10,7 @@ import requests
 
 from .config import Settings
 from .exceptions import AuthError
+from .i18n import t
 from .token_store import TokenData, TokenStore
 
 
@@ -45,12 +46,16 @@ class OAuthClient:
         )
         if response.status_code >= 400:
             raise AuthError(
-                f"Token exchange failed ({response.status_code}): {response.text[:300]}"
+                t(
+                    "auth.token_exchange_failed",
+                    status=response.status_code,
+                    details=response.text[:300],
+                )
             )
         token_payload = response.json()
         token = self.store.save(token_payload)
         if not token.access_token:
-            raise AuthError("Received token payload without access_token.")
+            raise AuthError(t("auth.token_payload_missing_access"))
         return token
 
     def refresh_access_token(self, refresh_token: str) -> TokenData:
@@ -67,27 +72,26 @@ class OAuthClient:
         )
         if response.status_code >= 400:
             raise AuthError(
-                f"Token refresh failed ({response.status_code}): {response.text[:300]}"
+                t(
+                    "auth.token_refresh_failed",
+                    status=response.status_code,
+                    details=response.text[:300],
+                )
             )
         token_payload = response.json()
         token = self.store.save(token_payload)
         if not token.access_token:
-            raise AuthError("Received refreshed payload without access_token.")
+            raise AuthError(t("auth.token_refresh_payload_missing_access"))
         return token
 
     def get_valid_token(self) -> TokenData:
         token = self.store.load()
         if token is None:
-            raise AuthError(
-                "No token found. Run 'suunto-export auth-url' and then provide "
-                "an auth code via 'exchange-code' or 'export --auth-code'."
-            )
+            raise AuthError(t("auth.no_token_found"))
 
         if token.is_expired():
             if not token.refresh_token:
-                raise AuthError(
-                    "Access token expired and no refresh_token is available. Re-authenticate."
-                )
+                raise AuthError(t("auth.expired_no_refresh"))
             token = self.refresh_access_token(token.refresh_token)
         return token
 

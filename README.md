@@ -123,6 +123,15 @@ Valeurs importantes par défaut:
 - `SUUNTO_REQUIRE_CONSENT=true`
 - `SUUNTO_RATE_LIMIT_PER_MINUTE=10`
 
+## Langue de l'application
+
+- Par défaut, la CLI utilise la langue systeme:
+  - systeme en francais => interface en francais
+  - toute autre langue systeme => interface en anglais
+- Override possible:
+  - variable d'environnement `SUUNTO_LANG=fr|en`
+  - argument CLI global `--lang fr|en`
+
 ## Flux OAuth2
 
 1. Générer l'URL d'autorisation:

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "suunto-export-activity"
+version = "0.1.0"
+description = "Export, parse, and structure Suunto workouts for analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "mio" }]
+dependencies = [
+  "requests>=2.31.0",
+  "fitparse>=1.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+]
+
+[project.scripts]
+suunto-export = "suunto_export_activity.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

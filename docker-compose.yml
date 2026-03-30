@@ -1,0 +1,17 @@
+services:
+  suunto-export:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: suunto-export-activity:latest
+    env_file:
+      - .env
+    environment:
+      SUUNTO_OUTPUT_DIR: ${SUUNTO_OUTPUT_DIR:-/app/output}
+      SUUNTO_LOCAL_INPUT: ${SUUNTO_LOCAL_INPUT:-/data}
+      SUUNTO_TOKEN_PATH: ${SUUNTO_TOKEN_PATH:-/app/.tokens/suunto_token.json}
+    working_dir: /app
+    volumes:
+      - ./output:/app/output
+      - ./.tokens:/app/.tokens
+      - ./data:/data

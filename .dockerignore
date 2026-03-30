@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.tokens/
+output/
+data/
+.git/
+.gitignore
+*.pyc

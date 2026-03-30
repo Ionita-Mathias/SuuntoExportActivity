@@ -19,3 +19,11 @@ class ApiError(SuuntoExportError):
 
 class ParseError(SuuntoExportError):
     """Raised when activity parsing fails."""
+
+
+class ConsentError(SuuntoExportError):
+    """Raised when explicit user consent is missing."""
+
+
+class SecurityError(SuuntoExportError):
+    """Raised for encryption/decryption or sensitive-data handling issues."""

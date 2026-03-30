@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from urllib.parse import urlencode
 
 import requests
@@ -15,7 +17,7 @@ class OAuthClient:
     def __init__(self, settings: Settings, timeout: int = 30):
         self.settings = settings
         self.timeout = timeout
-        self.store = TokenStore(settings.token_path)
+        self.store = TokenStore(settings.token_path, mode=settings.token_storage_mode)
         self.session = requests.Session()
 
     def build_authorize_url(self, state: str = "suunto-export") -> str:
@@ -77,7 +79,8 @@ class OAuthClient:
         token = self.store.load()
         if token is None:
             raise AuthError(
-                "No token found. Run 'suunto-export auth-url' then 'suunto-export exchange-code'."
+                "No token found. Run 'suunto-export auth-url' and then provide "
+                "an auth code via 'exchange-code' or 'export --auth-code'."
             )
 
         if token.is_expired():
@@ -87,6 +90,40 @@ class OAuthClient:
                 )
             token = self.refresh_access_token(token.refresh_token)
         return token
+
+    def refresh_if_possible(self) -> TokenData | None:
+        token = self.store.load()
+        if token is None or not token.refresh_token:
+            return None
+        return self.refresh_access_token(token.refresh_token)
+
+    @staticmethod
+    def _decode_jwt_claims(token: str) -> dict[str, object]:
+        parts = token.split(".")
+        if len(parts) < 2:
+            return {}
+        payload = parts[1]
+        padded = payload + "=" * (-len(payload) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode(padded.encode("ascii"))
+            value = json.loads(decoded.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def get_token_claims(self) -> dict[str, object]:
+        token = self.get_valid_token()
+        return self._decode_jwt_claims(token.access_token)
+
+    def get_current_user_id(self) -> str | None:
+        claims = self.get_token_claims()
+        for key in ("sub", "user_id", "userid", "uid"):
+            value = claims.get(key)
+            if value is not None:
+                candidate = str(value).strip()
+                if candidate:
+                    return candidate
+        return None
 
     def get_auth_header(self) -> str:
         token = self.get_valid_token()

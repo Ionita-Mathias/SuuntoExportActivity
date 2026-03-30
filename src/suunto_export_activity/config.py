@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .compliance import normalize_bool
 from .exceptions import ConfigError
 from .utils import load_env_file
 
@@ -21,7 +22,14 @@ class Settings:
     redirect_uri: str = "http://localhost:8080/callback"
     scope: str = "workouts.read"
     token_path: Path = Path(".tokens/suunto_token.json")
+    token_storage_mode: str = "memory"
     max_hr: int | None = None
+    rate_limit_per_minute: int = 10
+    owner_user_id: str | None = None
+    require_consent: bool = True
+    default_encrypt_export: bool = False
+    export_passphrase: str | None = None
+    log_file: Path = Path("suunto_export.log")
 
     @classmethod
     def from_env(
@@ -55,6 +63,18 @@ class Settings:
         token_path_str = os.getenv("SUUNTO_TOKEN_PATH", ".tokens/suunto_token.json").strip()
         token_path = Path(token_path_str)
 
+        token_storage_mode = os.getenv("SUUNTO_TOKEN_STORAGE", "memory").strip().lower()
+        if token_storage_mode not in {"memory", "file"}:
+            raise ConfigError("SUUNTO_TOKEN_STORAGE must be 'memory' or 'file'.")
+
+        rate_limit_raw = os.getenv("SUUNTO_RATE_LIMIT_PER_MINUTE", "10").strip()
+        try:
+            rate_limit_per_minute = int(rate_limit_raw)
+        except ValueError as exc:
+            raise ConfigError("SUUNTO_RATE_LIMIT_PER_MINUTE must be an integer.") from exc
+        if rate_limit_per_minute <= 0:
+            raise ConfigError("SUUNTO_RATE_LIMIT_PER_MINUTE must be > 0.")
+
         return cls(
             client_id=client_id,
             client_secret=client_secret,
@@ -69,5 +89,12 @@ class Settings:
             redirect_uri=os.getenv("SUUNTO_REDIRECT_URI", "http://localhost:8080/callback").strip(),
             scope=os.getenv("SUUNTO_SCOPE", "workouts.read").strip(),
             token_path=token_path,
+            token_storage_mode=token_storage_mode,
             max_hr=max_hr,
+            rate_limit_per_minute=rate_limit_per_minute,
+            owner_user_id=os.getenv("SUUNTO_OWNER_USER_ID", "").strip() or None,
+            require_consent=normalize_bool(os.getenv("SUUNTO_REQUIRE_CONSENT"), True),
+            default_encrypt_export=normalize_bool(os.getenv("SUUNTO_ENCRYPT_EXPORT"), False),
+            export_passphrase=os.getenv("SUUNTO_EXPORT_PASSPHRASE", "").strip() or None,
+            log_file=Path(os.getenv("SUUNTO_LOG_FILE", "suunto_export.log").strip()),
         )

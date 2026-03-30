@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -14,12 +15,29 @@ from .exceptions import ApiError
 from .utils import ensure_directory
 
 
+class RequestLimiter:
+    """Simple fixed-interval limiter to respect per-minute API quotas."""
+
+    def __init__(self, requests_per_minute: int):
+        self.requests_per_minute = max(1, requests_per_minute)
+        self._min_interval = 60.0 / self.requests_per_minute
+        self._last_request_ts = 0.0
+
+    def wait_if_needed(self) -> None:
+        now = time.monotonic()
+        elapsed = now - self._last_request_ts
+        if elapsed < self._min_interval:
+            time.sleep(self._min_interval - elapsed)
+        self._last_request_ts = time.monotonic()
+
+
 class SuuntoApiClient:
     def __init__(self, settings: Settings, oauth_client: OAuthClient, timeout: int = 45):
         self.settings = settings
         self.oauth_client = oauth_client
         self.timeout = timeout
         self.session = requests.Session()
+        self.rate_limiter = RequestLimiter(settings.rate_limit_per_minute)
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -36,8 +54,10 @@ class SuuntoApiClient:
         params: dict[str, Any] | None = None,
         stream: bool = False,
         absolute_url: bool = False,
+        retry_on_unauthorized: bool = True,
     ) -> requests.Response:
         url = endpoint if absolute_url else f"{self.settings.api_base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        self.rate_limiter.wait_if_needed()
         response = self.session.request(
             method,
             url,
@@ -46,6 +66,25 @@ class SuuntoApiClient:
             timeout=self.timeout,
             stream=stream,
         )
+
+        if response.status_code == 401 and retry_on_unauthorized:
+            refreshed = self.oauth_client.refresh_if_possible()
+            if refreshed is not None:
+                self.rate_limiter.wait_if_needed()
+                response = self.session.request(
+                    method,
+                    url,
+                    headers=self._headers(),
+                    params=params,
+                    timeout=self.timeout,
+                    stream=stream,
+                )
+
+        if response.status_code == 429:
+            raise ApiError(
+                f"Suunto API rate limit reached for {url}. "
+                f"Configured client-side throttle: {self.settings.rate_limit_per_minute}/minute."
+            )
         if response.status_code >= 400:
             raise ApiError(f"API request failed ({response.status_code}) for {url}: {response.text[:400]}")
         return response
@@ -82,13 +121,55 @@ class SuuntoApiClient:
             for item in items:
                 collected.append(item)
                 if max_items is not None and len(collected) >= max_items:
-                    return collected
+                    return self._filter_for_current_user(collected)
 
             if len(items) < page_size:
                 break
             offset += page_size
 
-        return collected
+        return self._filter_for_current_user(collected)
+
+    def _effective_user_id(self) -> str | None:
+        if self.settings.owner_user_id:
+            return self.settings.owner_user_id
+        return self.oauth_client.get_current_user_id()
+
+    @staticmethod
+    def _extract_owner_id(workout: dict[str, Any]) -> str | None:
+        for key in (
+            "userId",
+            "user_id",
+            "ownerId",
+            "owner_id",
+            "athleteId",
+            "athlete_id",
+            "accountId",
+            "account_id",
+        ):
+            value = workout.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
+        user_node = workout.get("user")
+        if isinstance(user_node, dict):
+            for key in ("id", "userId", "user_id"):
+                value = user_node.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+
+        return None
+
+    def _filter_for_current_user(self, workouts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        user_id = self._effective_user_id()
+        if not user_id:
+            return workouts
+
+        filtered: list[dict[str, Any]] = []
+        for workout in workouts:
+            owner_id = self._extract_owner_id(workout)
+            if owner_id is None or owner_id == user_id:
+                filtered.append(workout)
+        return filtered
 
     @staticmethod
     def _extract_workout_items(payload: Any) -> list[dict[str, Any]]:

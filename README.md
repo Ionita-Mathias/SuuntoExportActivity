@@ -1,23 +1,93 @@
 # Suunto Export Activity
 
-Utilitaire Python pour exporter les activités Suunto via OAuth2, parser les fichiers `.fit` / `.json`, et générer un format structuré (`JSON` + `CSV`) pour analyse avancée (y compris avec un LLM).
+CLI Python pour exporter et analyser **vos propres** activités Suunto via Suunto Cloud API, avec OAuth2, parsing FIT/JSON et sortie structurée JSON/CSV.
 
-## Fonctionnalités
+Compatible avec Suunto.
+Usage personnel uniquement.
+L'API Suunto Cloud est utilisée **en l'état**, sans garantie.
 
-- Authentification OAuth2 (URL d'autorisation, échange code, refresh automatique)
-- Appel API Suunto (`/v2/workouts`) avec pagination simple
-- Téléchargement des ressources d'activité (`.fit`, `.json`) quand disponibles
-- Parsing FIT (session, laps, GPS, FC, dénivelé, allure estimée)
-- Parsing JSON natif avec normalisation
-- Export:
-  - `activities.json` (hiérarchique, riche)
-  - `activities.csv` (plat, agrégé)
+## Fonctionnalités orientées conformité
 
-## Prérequis
+- OAuth2 uniquement (aucune gestion de mot de passe Suunto)
+- Consentement explicite avant export/traitement/suppression (désactivable volontairement pour l'automatisation)
+- Approche local-first pour les données
+- Mode de stockage des tokens:
+  - `memory` (par défaut, recommandé)
+  - `file` (optionnel)
+- Limitation du débit API (`SUUNTO_RATE_LIMIT_PER_MINUTE`, par défaut `10`)
+- Filtrage par utilisateur via le `sub` JWT (ou `SUUNTO_OWNER_USER_ID`)
+- Commande de suppression des exports (`delete-data`)
+- Chiffrement optionnel des sorties (`.enc`) via passphrase
 
-- Python 3.10+
-- Accès API Suunto (`client_id`, `client_secret`, `subscription key`)
-- Docker + Docker Compose (optionnel)
+## Capacités principales
+
+- Récupération des workouts via `https://cloudapi.suunto.com/v2/workouts`
+- Téléchargement des ressources associées (`.fit`, `.json`)
+- Parsing FIT/JSON: métadonnées, FC, laps, GPS, dénivelé, allure
+- Exports:
+  - `activities.json`
+  - `activities.csv`
+
+## Exemples de types d'export
+
+- `export` API complet (workouts Suunto + parsing + JSON/CSV)
+- `parse-local` (fichiers `.fit`/`.json` déjà présents en local)
+- `export` chiffré (`.enc`) pour stockage hors machine locale
+
+Types d'activités courants observés:
+
+- `TrailRun`
+- `Run`
+- `BackcountrySki`
+- `AlpineSki`
+- `Ride`
+- `Walk`
+
+## Exemple de structure JSON
+
+```json
+{
+  "activity_id": "123",
+  "type": "trail",
+  "date": "2026-03-30",
+  "duration": "01:30:00",
+  "distance": 15.5,
+  "elevation_gain": 800,
+  "heart_rate": {
+    "avg": 145,
+    "max": 178
+  },
+  "laps": [
+    {
+      "lap_number": 1,
+      "distance_km": 5.0,
+      "pace_avg": "05:30/km",
+      "hr_avg": 140
+    }
+  ],
+  "gps_track": [
+    {
+      "lat": 46.1,
+      "lon": 6.2,
+      "altitude": 745.2,
+      "timestamp": "2026-03-30T07:11:25Z"
+    }
+  ],
+  "notes": "Sensations 7/10"
+}
+```
+
+## Exemple de colonnes CSV
+
+- `activity_id`
+- `type`
+- `date`
+- `duration`
+- `distance_km`
+- `elevation_gain`
+- `elevation_loss`
+- `hr_avg`
+- `hr_max`
 
 ## Installation
 
@@ -28,157 +98,113 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-## Configuration
+Si vous souhaitez chiffrer les exports:
 
-1. Copier le fichier d'exemple:
+```bash
+pip install -e '.[crypto]'
+```
+
+## Configuration
 
 ```bash
 cp .env.example .env
 ```
 
-2. Remplir au minimum:
+Variables API minimales:
 
 - `SUUNTO_CLIENT_ID`
 - `SUUNTO_CLIENT_SECRET`
 - `SUUNTO_SUBSCRIPTION_KEY`
 - `SUUNTO_REDIRECT_URI`
 
-Le loader `.env` est interne (pas de dépendance `python-dotenv`) : les variables du fichier `.env` sont chargées automatiquement.
-La CLI lit aussi directement ces variables d'environnement (pratique avec Docker Compose).
-Pour `parse-local`, seules les variables optionnelles sont nécessaires (par exemple `SUUNTO_MAX_HR`).
+Valeurs importantes par défaut:
 
-## Utilisation Docker
-
-1. Préparer l'environnement:
-
-```bash
-cp .env.example .env
-mkdir -p output .tokens data
-```
-
-2. Construire l'image:
-
-```bash
-docker compose build
-```
-
-3. Commandes principales:
-
-```bash
-docker compose run --rm suunto-export auth-url
-docker compose run --rm suunto-export exchange-code --code "<AUTH_CODE>"
-docker compose run --rm suunto-export export
-```
-
-Notes:
-- `output/` et `.tokens/` sont montés en volume persistant.
-- `data/` est monté dans le conteneur sur `/data`.
-- Pour `parse-local`, dépose tes fichiers `.fit/.json` dans `./data` puis lance:
-
-```bash
-docker compose run --rm suunto-export parse-local
-```
+- `SUUNTO_TOKEN_STORAGE=memory`
+- `SUUNTO_REQUIRE_CONSENT=true`
+- `SUUNTO_RATE_LIMIT_PER_MINUTE=10`
 
 ## Flux OAuth2
 
-### 1) Générer l'URL d'autorisation
+1. Générer l'URL d'autorisation:
 
 ```bash
 suunto-export auth-url
 ```
 
-Ouvrir l'URL, autoriser l'application, puis récupérer le `code` depuis le callback.
+2. Échanger le code et exporter en une seule commande (recommandé avec le mode `memory`):
 
-### 2) Échanger le code contre un token
+```bash
+suunto-export export --auth-code "<AUTH_CODE>"
+```
+
+Vous pouvez aussi échanger le code séparément:
 
 ```bash
 suunto-export exchange-code --code "<AUTH_CODE>"
 ```
 
-Le token est stocké dans `SUUNTO_TOKEN_PATH` (par défaut `.tokens/suunto_token.json`).
+## Commandes
 
-## Export complet depuis l'API
+### Export depuis l'API
 
 ```bash
 suunto-export export \
-  --output-dir ./output \
   --start-date 2026-01-01 \
-  --end-date 2026-12-31
-```
-
-Tu peux aussi définir `SUUNTO_OUTPUT_DIR`, `SUUNTO_EXPORT_START_DATE`, `SUUNTO_EXPORT_END_DATE` dans `.env` et lancer simplement `suunto-export export`.
-
-Résultat:
-
-- `output/raw/` : fichiers sources téléchargés
-- `output/activities.json` : activités normalisées
-- `output/activities.csv` : vue tabulaire agrégée
-
-## Traitement local de fichiers déjà exportés
-
-Si l'accès API est limité, tu peux parser directement des fichiers locaux:
-
-```bash
-suunto-export parse-local \
-  --input /chemin/vers/mes-fichiers \
+  --end-date 2026-12-31 \
   --output-dir ./output
 ```
 
-Si `SUUNTO_LOCAL_INPUT` est défini dans `.env`, l'argument `--input` devient optionnel.
+### Parsing local
 
-## Structure JSON (exemple)
-
-```json
-{
-  "activity_id": "123",
-  "type": "trail",
-  "date": "2026-03-29",
-  "duration": "01:30:00",
-  "distance": 15.5,
-  "elevation_gain": 800,
-  "heart_rate": {
-    "avg": 145,
-    "max": 178,
-    "zones": {
-      "z1": 180,
-      "z2": 120,
-      "z3": 95,
-      "z4": 40,
-      "z5": 8
-    }
-  },
-  "laps": [
-    {
-      "lap_number": 1,
-      "distance": 5.0,
-      "pace_avg": "05:30/km",
-      "hr_avg": 140
-    }
-  ],
-  "gps_track": [
-    {
-      "lat": 46.1,
-      "lon": 6.2,
-      "altitude": 745.2,
-      "timestamp": "2026-03-29T07:11:25Z"
-    }
-  ],
-  "notes": "Sensations : 7/10"
-}
+```bash
+suunto-export parse-local \
+  --input /chemin/vers/fichiers \
+  --output-dir ./output
 ```
 
-## Gestion d'erreurs intégrée
+### Export chiffré
 
-- Token expiré ou absent: refresh automatique si possible, sinon erreur explicite
-- Réponse API invalide: exceptions contextualisées
-- Fichier corrompu/non supporté: activité ignorée avec warning de parsing
+```bash
+suunto-export export --auth-code "<AUTH_CODE>" --encrypt-output --passphrase "<SECRET>"
+```
 
-## Limites connues
+### Suppression des données exportées
 
-- Le schéma exact des ressources workout peut varier selon le compte/endpoint Suunto; le code applique une recherche tolérante des URLs FIT/JSON.
-- Les zones FC reposent soit sur les valeurs session, soit sur un calcul basé sur `SUUNTO_MAX_HR`.
+```bash
+suunto-export delete-data --output-dir ./output
+```
 
-## Tests rapides
+Pour effacer aussi le cache token (si `SUUNTO_TOKEN_STORAGE=file`):
+
+```bash
+suunto-export delete-data --output-dir ./output --include-tokens
+```
+
+## Docker
+
+```bash
+cp .env.example .env
+mkdir -p output .tokens data
+
+docker compose build
+
+docker compose run --rm suunto-export auth-url
+docker compose run --rm suunto-export export --auth-code "<AUTH_CODE>"
+```
+
+Pour le parsing local en Docker, placez les fichiers dans `./data` puis:
+
+```bash
+docker compose run --rm suunto-export parse-local --input /data
+```
+
+## Bonnes pratiques
+
+- Ne partagez pas vos exports, tokens ou credentials.
+- N'utilisez pas de scraping ni de méthode non autorisée.
+- Ce projet est prévu pour usage personnel, sauf accord partenaire valide.
+
+## Vérification rapide
 
 ```bash
 python -m compileall src
